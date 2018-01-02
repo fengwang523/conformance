@@ -4,12 +4,12 @@ conformance scripts are in bin/ dir
  The script only supports config files in flatformat. 
 
  Does not support indented config format  
-
+ 
  Junos support flat config natively (show config | display set) 
-
+ 
  Nokia 7x50 SROS native indented config file can be flatted via conformance script therefore is supported 
-
- Cisco IOS config can be flatted with a script as well
+ 
+  Cisco IOS config can be flatted with a script as well
 
 2. script files
 
@@ -48,9 +48,7 @@ r varies of things
     - use below as a template:
 
 {-
-
 device_type = Nokia_7750C4_RE
-
 BCP_version = 15.2.0
 report_type = BCP Base Config Conformance
 input_dir = /data/conformance/configs/
@@ -135,5 +133,261 @@ rule line 2
 rule line n
 ->
 
+5.1.5 A simple rule with regex for information that is device dependent
 
-  
+<- router_isis_global
+/config router isis level-capability level-2
+/config router isis level 2 wide-metrics-only
+r</config router isis area-id \d{2}\.\d{4}>
+/config router isis lsp-lifetime 65535
+/config router isis overload-on-boot timeout 260
+/config router isis traffic-engineering
+/config router isis advertise-passive-only
+/config router isis loopfree-alternate
+/config router isis spf-wait 1 10 50
+/config router isis level 2 wide-metrics-only
+->
+#in this example, "r</config router isis area-id \d{2}\.\d{4}>" is a regex rule line
+
+
+5.1.6 A simple SROS rule with match type equal to none to check existence of unwanted line
+
+ - use cases include that telnet/ftp etc should not be enabled on devices 
+ - below example is to check that telnet should not be enabled on SROS devices 
+
+<- system_security_no_telnet
+<#match=none>
+/config system security telnet-server
+->
+
+5.1.7 A simple SROS rule that depends on the value derived from a get_parameter rule
+
+ use cases 
+ - devices in different provinces use different syslog/tacacs servers 
+ - different version of the OS require different config format or value 
+ 
+ 1st step is to build a get_parameter rule
+ below example is to get the province of the device 
+
+<-get_province
+<#type=get_parameter>
+^/config system name "\w{4}(\w{2})\w{4}\d{2}"
+->
+
+ the value is the $1 from regex match, ie: from "(\w{2})" of the regex match for province code
+
+ 2nd step to build the conformance rule
+ below example is NTP time server conformance rules for different provinces 
+
+ <- system_time_BC
+<#condition=get_province=BC>
+/config system time sntp server-address 1.1.1.1 preferred
+/config system time sntp server-address 1.1.1.2
+/config system time sntp no shutdown
+/config system time zone UTC
+->
+
+<- system_time_AB
+<#condition=get_province=AB>
+/config system time sntp server-address 2.1.1.1 preferred
+/config system time sntp server-address 2.1.1.2
+/config system time sntp no shutdown
+/config system time zone UTC
+->
+
+5.1.7 A simple rule that uses hostname substitution
+
+ use case: some config line has hostname in it 
+ how to use it: in the place where hostname would appear, substitute with s<HOSTNAME> 
+ example: 
+
+<- log_syslog_BC
+<#condition=get_province=BC>
+/config log syslog 1 address 1.1.1.1
+/config log syslog 1 log-prefix "s<HOSTNAME>"
+/config log syslog 2 address 1.1.1.2
+/config log syslog 2 log-prefix "s<HOSTNAME>"
+-> 
+
+ if the device is ABFDBC01RE01, when processing its config file, the rule will become:
+
+<- log_syslog_BC
+<#condition=get_province=BC>
+/config log syslog 1 address 1.1.1.1
+/config log syslog 1 log-prefix "ABFDBC01RE01
+/config log syslog 2 address 1.1.1.2
+/config log syslog 2 log-prefix "ABFDBC01RE01"
+->
+
+5.2 Dynamic Rules
+
+5.2.1 Dynamic rule vs Simple rule
+
+ simple rule is for configs pretty much static. They appear in config file once. 
+ A dynamic rule is for configs in dynamic nature. They could appear in config file multiple times. 
+ For example:  
+  - router interface config 
+  - port config 
+  - BGP neighbor config, etc 
+
+5.2.2 Dynamic rule concept
+
+ for a dynamic rule, an "instance" concept is defined.  
+ for example, a RE should have two CA router interfaces. This rule would have two "instances" 
+ the rule needs to have instruction on how to retrieve the "instance" of each individual CA router interface
+
+5.2.3 Dynamic rule structure
+
+<-rule_name
+<#type=dynamic>
+<#instance=instance_define_string>
+<#match=match_type>
+<#condition=condition_rule_name=parameter_value>
+<#weight=weight_value>
+<#instance_condition=config_line>
+rule line 1
+rule line 2
+...
+rule line n
+->
+
+5.2.4 An example of a basic dynamic rule
+
+ Below is an example for RE port facing GPON device 
+
+<- port_GPON
+<#type=dynamic>
+<#instance=/config port (\S+) description ".*?alnum:{8}OT\d{2}.*?">
+<#instance_condition=/config port i<1> ethernet mode access>
+<#match=any_if_found>
+/config port i<1> ethernet mode access
+/config port i<1> ethernet encap-type dot1q
+/config port i<1> ethernet egress-scheduler-policy "AccessEgress-10GE"
+->
+
+ when processing ABFDBC01RE01 which has two GPON ports:
+
+/config port 5/1/2 description "ABFDBC01OT01 NTA-10GE-1 - LAG: 85 | ABFDBC01/ABFDBC01OL0/GE10/1"
+/config port 10/1/2 description "ABFDBC01OT01 NTB-10GE-1 - LAG: 85 | ABFDBC01/ABFDBC01OL0/GE10/2"
+
+ 5/1/2 and 10/1/2 will be added to this rule's instance table. The rule will check config file for:
+
+/config port 5/1/2 ethernet mode access
+/config port 5/1/2 ethernet encap-type dot1q
+/config port 5/1/2 ethernet egress-scheduler-policy "AccessEgress-10GE"
+/config port 10/1/2 ethernet mode access
+/config port 10/1/2 ethernet encap-type dot1q
+/config port 10/1/2 ethernet egress-scheduler-policy "AccessEgress-10GE"
+
+
+ example explained: 
+
+ <#type=dynamic> :  this line is required for any dynamic rule
+ <#instance=/config port (\S+) description ".*?alnum:{8}OT\d{2}.*?"> : this is to define the instances
+    # this "/config port ..." line is a regex, the matched port-IDs from "(\S+)" populates the instance table
+ <#match=any_if_found> : if an instance is found, match the rule config lines
+ /config port i<1> ethernet mode access : "i<1>" will be replaced by the real port-id from regex match
+
+
+5.2.5 Dynamic rule example for two level of instance identification
+
+ use case : Junos interface config includes major interface id and unit id 
+ example for JUNOS BR interface facing RR device: 
+
+<- logical_rr
+<#type=dynamic>
+<#match=any_if_found>
+<#instance=set interfaces (et-\d[\d\/.]+\:(?:\d+)) unit (\d+) description ".*(?:........RR03)(?:.*)?">
+set interfaces i<1> unit i<2> family inet no-redirects
+r<set interfaces i<1> unit i<2> family inet address \d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{2}>
+set interfaces i<1> unit i<2> family iso
+->
+
+ for VANCBC01BR05 which has two interfaces facing RR03:
+
+set interfaces et-0/0/0:0 unit 650 description "VANCBC01GS03 Te9/4 | VLAN 650 | 10G | VANCBC01RR03 fxp0.1"
+set interfaces et-1/0/0:0 unit 653 description "VANCBC01GS04 Te9/4 | VLAN 653 | 10G | NWMRBC01RR03 fxp1.1"
+
+
+ this rule will be able to parse out two instances "et-0/0/0:0 650" and "et-1/0/0:0 653" and add them to rule instance table.
+ The rule will actually become:
+
+set interfaces et-0/0/0:0 unit 650 family inet no-redirects
+r<set interfaces et-0/0/0:0 unit 650 family inet address \d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{2}>
+set interfaces et-0/0/0:0 unit 650 family iso
+set interfaces et-1/0/0:0 unit 653 family inet no-redirects
+r<set interfaces et-1/0/0:0 unit 653 family inet address \d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{2}>
+set interfaces et-1/0/0:0 unit 653 family iso
+
+
+ example explained
+ the instance line defines two level of instances:
+
+(et-\d[\d\/.]+\:(?:\d+)) : major interface id, which will replace i<1> in rule config line
+(\d+) : unit id, which will replace i<2> in rule config line
+
+5.2.6 Dynamic rule example to match certain number of instances
+
+ use case example: on RE device, normally there should be 2 uplinks interfaces facing CA/L2PE 
+ example: 
+
+ <- router_pim_interface_CA
+ <#type=dynamic>
+ <#instance=/config router pim interface ("\w{8}(?:CA|PE)\d{2}")>
+ <#match=2,2>
+ /config router pim interface i<1> bfd-enable
+ ->
+
+ example explained: 
+
+ <#match=2,2> : <#match=min,max>
+ min and max number of instances to match
+
+5.2.7 Dynamic rule examples of instance identification depends on a condition
+
+ use case example: on RE, there are two type of ports facing DE: router vs layer 2 for multicast offload 
+ rule example: 
+
+<- port_DE_Network
+<#type=dynamic>
+<#instance=/config port (\S+) description ".*?alnum:DE\d{2}.*?">
+<#instance_condition=/config port i<1> ethernet network>
+<#match=any_if_found>
+/config port i<1> network egress pool slope-policy "COLOURED-WRED"
+/config port i<1> ethernet mtu 9192
+/config port i<1> ethernet egress-scheduler-policy "DE-RE-facing-GE"
+/config port i<1> ethernet network queue-policy "network-facing"
+/config port i<1> ethernet network accounting-policy 3
+/config port i<1> ethernet network collect-stats
+/config port i<1> ethernet lldp dest-mac nearest-bridge admin-status tx-rx
+/config port i<1> ethernet lldp dest-mac nearest-bridge tx-tlvs port-desc sys-name sys-desc sys-cap
+/config port i<1> ethernet lldp dest-mac nearest-bridge tx-mgmt-address system
+/config port i<1> ethernet hold-time up 60
+/config port i<1> no shutdown
+->
+
+
+
+ example explained 
+ below line:
+
+<#instance_condition=/config port i<1> ethernet network>
+
+ this says that instance identification has a condition. 
+ Only if the port is network type, the port-id will be added to instance table
+
+5.2.8 Dynamic rule examples of certain config should not be there
+
+ below is example to check that "icmp no unreachables" should not be configured under any router interface 
+
+<- router_interface_no_unreachables_removed
+<#type=dynamic>
+<#instance=/config router interface (".+?") address>
+<#match=none_if_found>
+/config router interface i<1> icmp no unreachables
+->
+
+ in this use case, set <#match=none_if_found> 
+
+
+

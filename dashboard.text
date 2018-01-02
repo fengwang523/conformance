@@ -1,0 +1,21 @@
+conformance dashboard uses php and google chart api to report the conformance results into a dashboad like www page
+
+mysql table structure:
+
+mysql> desc dashboard;
++----------------+--------------+------+-----+---------+-------+
+| Field          | Type         | Null | Key | Default | Extra |
++----------------+--------------+------+-----+---------+-------+
+| date           | date         | NO   | PRI | NULL    |       |
+| current        | char(1)      | NO   |     | NULL    |       |
+| device_type    | varchar(30)  | NO   | PRI | NULL    |       |
+| device_count   | int(11)      | NO   |     | NULL    |       |
+| rule_count     | int(11)      | NO   |     | NULL    |       |
+| bcp_version    | varchar(30)  | NO   |     | NULL    |       |
+| report_type    | varchar(100) | NO   | PRI | NULL    |       |
+| report_link    | varchar(100) | NO   |     | NULL    |       |
+| config_score   | int(11)      | NO   |     | NULL    |       |
+| software_score | int(11)      | YES  |     | NULL    |       |
++----------------+--------------+------+-----+---------+-------+
+10 rows in set (0.06 sec)
+
