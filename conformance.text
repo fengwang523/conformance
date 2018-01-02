@@ -48,7 +48,9 @@ r varies of things
     - use below as a template:
 
 {-
+
 device_type = Nokia_7750C4_RE
+
 BCP_version = 15.2.0
 report_type = BCP Base Config Conformance
 input_dir = /data/conformance/configs/
